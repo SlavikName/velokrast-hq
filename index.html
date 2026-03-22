@@ -128,11 +128,6 @@
             font-size: 20px;
             cursor: pointer;
         }
-        .loading {
-            text-align: center;
-            padding: 10px;
-            color: #888;
-        }
         @media (max-width: 600px) {
             body { padding: 15px; }
             .bubble { font-size: 15px; }
@@ -156,7 +151,7 @@
 
     <div id="chat-area" class="chat-area">
         <div class="message assistant">
-            <div class="bubble">Привет! Я — твой штаб Velokrast. Выбери агента и задай вопрос. Работает через OpenRouter (бесплатно).</div>
+            <div class="bubble">Привет! Я — твой штаб Velokrast. Выбери агента и задай вопрос.</div>
         </div>
     </div>
 
@@ -166,8 +161,8 @@
     </div>
 
     <script>
-        // Бесплатный OpenRouter API ключ (ограниченные запросы, но для теста хватит)
-        const API_KEY = "sk-or-v1-7e6f4e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6";
+        // ТВОЙ API КЛЮЧ
+        const API_KEY = "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";
         const API_URL = "https://openrouter.ai/api/v1/chat/completions";
         
         const agents = {
@@ -250,7 +245,13 @@
                 if (data.choices && data.choices[0]) {
                     addMessage(data.choices[0].message.content, "assistant");
                 } else {
-                    addMessage("Ошибка: " + (data.error?.message || "Неизвестная ошибка"), "assistant");
+                    let errorMsg = "Ошибка: ";
+                    if (data.error) {
+                        errorMsg += data.error.message || JSON.stringify(data.error);
+                    } else {
+                        errorMsg += "Неизвестная ошибка";
+                    }
+                    addMessage(errorMsg, "assistant");
                 }
             } catch (e) {
                 removeLoadingMessage();
