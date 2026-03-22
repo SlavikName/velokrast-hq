@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>Велокраст Штаб</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+            padding-bottom: 100px;
+        }
+        .header {
+            background: #1e3c2c;
+            color: white;
+            padding: 20px;
+            border-radius: 20px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 5px;
+        }
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+        .agents {
+            display: flex;
+            gap: 10px;
+            overflow-x: auto;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+            scrollbar-width: thin;
+        }
+        .agent-btn {
+            background: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 40px;
+            font-size: 16px;
+            font-weight: 500;
+            white-space: nowrap;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+        .agent-btn.active {
+            background: #1e3c2c;
+            color: white;
+        }
+        .chat-area {
+            background: white;
+            border-radius: 20px;
+            padding: 20px;
+            min-height: 400px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        .message {
+            margin-bottom: 15px;
+            display: flex;
+        }
+        .message.user {
+            justify-content: flex-end;
+        }
+        .message.assistant {
+            justify-content: flex-start;
+        }
+        .bubble {
+            max-width: 85%;
+            padding: 12px 16px;
+            border-radius: 20px;
+            font-size: 16px;
+            line-height: 1.4;
+        }
+        .user .bubble {
+            background: #1e3c2c;
+            color: white;
+            border-bottom-right-radius: 5px;
+        }
+        .assistant .bubble {
+            background: #f0f0f0;
+            color: #333;
+            border-bottom-left-radius: 5px;
+        }
+        .input-area {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: white;
+            padding: 15px 20px;
+            border-top: 1px solid #ddd;
+            display: flex;
+            gap: 10px;
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.05);
+        }
+        .input-area input {
+            flex: 1;
+            padding: 12px 16px;
+            border: 1px solid #ddd;
+            border-radius: 30px;
+            font-size: 16px;
+            outline: none;
+        }
+        .input-area button {
+            background: #1e3c2c;
+            color: white;
+            border: none;
+            width: 48px;
+            border-radius: 30px;
+            font-size: 20px;
+            cursor: pointer;
+        }
+        .loading {
+            text-align: center;
+            padding: 10px;
+            color: #888;
+        }
+        @media (max-width: 600px) {
+            body { padding: 15px; }
+            .bubble { font-size: 15px; }
+        }
+    </style>
+    <script type="importmap">
+        {
+            "imports": {
+                "@mlc-ai/web-llm": "https://esm.run/@mlc-ai/web-llm"
+            }
+        }
+    </script>
+    <script type="module">
+        import * as webllm from "@mlc-ai/web-llm";
+
+        const modelId = "DeepSeek-R1-Distill-Qwen-7B-q4f32_1-MLC";
+        const appConfig = {
+            model_list: [{ model_id: modelId, model_url: null }],
+        };
+
+        let engine = null;
+        let isReady = false;
+
+        const agents = {
+            architect: "Ты — главный архитектор Velokrast. Помогаешь планировать проекты кастомных велосипедов, выбирать компоненты, оценивать сложность сборки. Отвечай кратко, по делу.",
+            smm: "Ты — SMM-агент Velokrast. Пиши посты для Telegram и VK. Стиль: дружелюбный, экспертный, с эмодзи. Добавляй хештеги #велокраст #велосипед #кастом.",
+            storage: "Ты — складской ум Velokrast. Веди учёт запчастей. Отвечай на вопросы о наличии, совместимости. Если чего-то нет — предложи аналоги.",
+            bju: "Ты — БЖУ-счётчик для велогонщика. Рассчитывай калории, белки, жиры, углеводы. Отвечай кратко.",
+            client: "Ты — клиентский менеджер Velokrast. Общайся с клиентами вежливо, быстро, помогай с выбором."
+        };
+
+        let currentAgent = "architect";
+
+        const agentButtons = {
+            architect: document.getElementById('btn-architect'),
+            smm: document.getElementById('btn-smm'),
+            storage: document.getElementById('btn-storage'),
+            bju: document.getElementById('btn-bju'),
+            client: document.getElementById('btn-client')
+        };
+        const chatArea = document.getElementById('chat-area');
+        const userInput = document.getElementById('user-input');
+        const sendBtn = document.getElementById('send-btn');
+
+        async function initModel() {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = "⏳ Загружаю DeepSeek (первый раз может занять 2-3 минуты)...";
+            try {
+                engine = await webllm.CreateMLCEngine(modelId, { appConfig });
+                isReady = true;
+                statusDiv.textContent = "✅ DeepSeek готов! Можете задавать вопросы.";
+                statusDiv.style.color = "#1e3c2c";
+                userInput.disabled = false;
+                sendBtn.disabled = false;
+            } catch (e) {
+                statusDiv.textContent = "❌ Ошибка загрузки: " + e.message;
+                console.error(e);
+            }
+        }
+
+        async function sendMessage() {
+            if (!isReady) {
+                addMessage("Модель ещё не загружена, подождите...", "assistant");
+                return;
+            }
+            const text = userInput.value.trim();
+            if (!text) return;
+
+            addMessage(text, "user");
+            userInput.value = "";
+
+            const systemPrompt = agents[currentAgent];
+            const fullPrompt = `${systemPrompt}\n\nПользователь: ${text}\n\nАгент:`;
+
+            addMessage("🤔 ...", "assistant", true);
+
+            try {
+                const response = await engine.chat.completions.create({
+                    messages: [{ role: "user", content: fullPrompt }],
+                    max_tokens: 1024,
+                    temperature: 0.7
+                });
+                const reply = response.choices[0].message.content;
+                removeLoadingMessage();
+                addMessage(reply, "assistant");
+            } catch (e) {
+                removeLoadingMessage();
+                addMessage("Ошибка: " + e.message, "assistant");
+            }
+        }
+
+        function addMessage(text, role, isLoading = false) {
+            const div = document.createElement('div');
+            div.className = `message ${role}`;
+            const bubble = document.createElement('div');
+            bubble.className = 'bubble';
+            if (isLoading) {
+                bubble.id = 'loading-bubble';
+                bubble.innerHTML = '🤔 ...';
+            } else {
+                bubble.textContent = text;
+            }
+            div.appendChild(bubble);
+            chatArea.appendChild(div);
+            chatArea.scrollTop = chatArea.scrollHeight;
+        }
+
+        function removeLoadingMessage() {
+            const loading = document.getElementById('loading-bubble');
+            if (loading) {
+                loading.parentElement.remove();
+            }
+        }
+
+        function setActiveAgent(agentId) {
+            currentAgent = agentId;
+            for (const [id, btn] of Object.entries(agentButtons)) {
+                if (btn) {
+                    if (id === agentId) btn.classList.add('active');
+                    else btn.classList.remove('active');
+                }
+            }
+            addMessage(`👋 Вы переключились на ${getAgentName(agentId)}. Задайте вопрос.`, "assistant");
+        }
+
+        function getAgentName(agentId) {
+            const names = {
+                architect: "Архитектора",
+                smm: "SMM-агента",
+                storage: "Складского ума",
+                bju: "БЖУ-счётчика",
+                client: "Клиентского менеджера"
+            };
+            return names[agentId] || "агента";
+        }
+
+        window.onload = () => {
+            initModel();
+            userInput.disabled = true;
+            sendBtn.disabled = true;
+            sendBtn.onclick = sendMessage;
+            userInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') sendMessage();
+            });
+            for (const [id, btn] of Object.entries(agentButtons)) {
+                if (btn) btn.onclick = () => setActiveAgent(id);
+            }
+        };
+    </script>
+</head>
+<body>
+    <div class="header">
+        <h1>🚲 Велокраст Штаб</h1>
+        <p>Твой локальный AI-центр управления</p>
+        <div id="status" style="font-size: 12px; margin-top: 8px;">⏳ Инициализация...</div>
+    </div>
+
+    <div class="agents">
+        <button id="btn-architect" class="agent-btn active">🧠 Архитектор</button>
+        <button id="btn-smm" class="agent-btn">📝 SMM</button>
+        <button id="btn-storage" class="agent-btn">📦 Склад</button>
+        <button id="btn-bju" class="agent-btn">🍽 БЖУ</button>
+        <button id="btn-client" class="agent-btn">💬 Клиент</button>
+    </div>
+
+    <div id="chat-area" class="chat-area">
+        <div class="message assistant">
+            <div class="bubble">Привет! Я — твой штаб Velokrast. Выбери агента и задай вопрос. Первый запуск может занять 2-3 минуты (загрузка модели).</div>
+        </div>
+    </div>
+
+    <div class="input-area">
+        <input type="text" id="user-input" placeholder="Напиши вопрос..." disabled>
+        <button id="send-btn" disabled>➤</button>
+    </div>
+</body>
+</html>
